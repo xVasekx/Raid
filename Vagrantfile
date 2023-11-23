@@ -25,6 +25,11 @@ MACHINES = {
                   :dfile => './sata4.vdi',
                   :size => 250,
                   :port => 4
+                },
+                :sata5 => {
+                  :dfile => './sata5.vdi',
+                  :size => 250,
+                  :port => 5
                 }
               }
             },
@@ -50,7 +55,24 @@ Vagrant.configure("2") do |config|
 	end
       end
       box.vm.provision "shell", inline: <<-SHELL
-            apt install -y mdadm smartmontools hdparm gdisk
+            mkdir -p ~root/.ssh
+                cp ~vagrant/.ssh/auth* ~root/.ssh
+            apt install -y mdadm smartmontools hdparm gdisk parted
+            mdadm --zero-superblock --force /dev/sd{b,c,d,e}
+            mdadm --create --verbose --force /dev/md0 -l 10 -n 4 /dev/sd{b,c,d,e}
+            echo "DEVICE partitions" > /etc/mdadm/mdadm.conf
+            mdadm --detail --scan --verbose | awk '/ARRAY/ {print}' >> /etc/mdadm/mdadm.conf
+            parted -s /dev/md0 mklabel gpt
+            parted /dev/md0 mkpart primary ext4 0% 20%
+            parted /dev/md0 mkpart primary ext4 20% 40%
+            parted /dev/md0 mkpart primary ext4 40% 60%
+            parted /dev/md0 mkpart primary ext4 60% 80%
+            parted /dev/md0 mkpart primary ext4 80% 100%
+            for i in $(seq 1 5); do sudo mkfs.ext4 /dev/md0p$i; done
+            mkdir -p /raid/part{1,2,3,4,5}
+            for i in $(seq 1 5); do mount /dev/md0p$i /raid/part$i; done
+            echo "#NEW DEVICE" >> /etc/fstab
+            for i in $(seq 1 5); do echo `sudo blkid /dev/md0p$i | awk '{print $2}'` /u0$i ext4 defaults 0 0 >> /etc/fstab; done
             SHELL
     end
   end
